@@ -107,9 +107,9 @@ export function CesiumViewerComponent({ tilesetUrl = "/data/alpha/tileset.json" 
 
   // Update camera controls when nav mode changes
   useEffect(() => {
-    if (viewerRef.current) {
-      configureCameraControls(viewerRef.current, navMode)
-    }
+    const viewer = viewerRef.current
+    if (!viewer || viewer.isDestroyed()) return
+    configureCameraControls(viewer, navMode)
   }, [navMode, configureCameraControls])
 
   // Update cursor based on navigation mode
@@ -271,40 +271,45 @@ export function CesiumViewerComponent({ tilesetUrl = "/data/alpha/tileset.json" 
   }, [zoomToTileset])
 
   const toggleGlobe = useCallback(() => {
-    setShowGlobe((prev) => {
-      const newValue = !prev
-      if (viewerRef.current) {
-        const { scene } = viewerRef.current
-        scene.globe.show = newValue
-        if (scene.skyBox) scene.skyBox.show = newValue
-        if (scene.skyAtmosphere) scene.skyAtmosphere.show = newValue
-      }
-      return newValue
-    })
+    setShowGlobe((prev) => !prev)
   }, [])
 
   const toggleWireframe = useCallback(() => {
-    setShowWireframe((prev) => {
-      const newValue = !prev
-      if (tilesetRef.current) {
-        tilesetRef.current.debugWireframe = newValue
-      }
-      return newValue
-    })
+    setShowWireframe((prev) => !prev)
   }, [])
 
   const togglePerformanceMode = useCallback(() => {
-    setPerformanceMode((prev) => {
-      const newValue = !prev
-      if (viewerRef.current) {
-        applyScenePerformance(viewerRef.current, newValue)
-      }
-      if (tilesetRef.current) {
-        applyTilesetPerformance(tilesetRef.current, newValue)
-      }
-      return newValue
-    })
-  }, [applyScenePerformance, applyTilesetPerformance])
+    setPerformanceMode((prev) => !prev)
+  }, [])
+
+  // Apply globe visibility changes via useEffect (safe ref access)
+  useEffect(() => {
+    const viewer = viewerRef.current
+    if (!viewer || viewer.isDestroyed()) return
+    const { scene } = viewer
+    scene.globe.show = showGlobe
+    if (scene.skyBox) scene.skyBox.show = showGlobe
+    if (scene.skyAtmosphere) scene.skyAtmosphere.show = showGlobe
+  }, [showGlobe])
+
+  // Apply wireframe changes via useEffect (safe ref access)
+  useEffect(() => {
+    const tileset = tilesetRef.current
+    if (!tileset) return
+    tileset.debugWireframe = showWireframe
+  }, [showWireframe])
+
+  // Apply performance mode changes via useEffect (safe ref access)
+  useEffect(() => {
+    const viewer = viewerRef.current
+    const tileset = tilesetRef.current
+    if (viewer && !viewer.isDestroyed()) {
+      applyScenePerformance(viewer, performanceMode)
+    }
+    if (tileset) {
+      applyTilesetPerformance(tileset, performanceMode)
+    }
+  }, [performanceMode, applyScenePerformance, applyTilesetPerformance])
 
   return (
     <div ref={containerRef} className="relative w-full h-full">
