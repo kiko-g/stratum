@@ -11,7 +11,17 @@ import {
   CameraEventType,
 } from "cesium"
 import { Button } from "@/components/ui/button"
-import { Globe as GlobeIcon, RotateCcw, Layers, Grid3x3, Move, RotateCw, ZoomIn } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import {
+  GlobeIcon,
+  RotateCcwIcon,
+  LayersIcon,
+  Grid3x3Icon,
+  MoveIcon,
+  RotateCwIcon,
+  ZoomInIcon,
+  ZapIcon,
+} from "lucide-react"
 
 // Set Cesium base URL to CDN (no account needed)
 if (typeof window !== "undefined") {
@@ -34,24 +44,33 @@ export function CesiumViewerComponent({ tilesetUrl = "/data/alpha/tileset.json" 
   const [showGlobe, setShowGlobe] = useState(false)
   const [showWireframe, setShowWireframe] = useState(false)
   const [navMode, setNavMode] = useState<NavigationMode>("orbit")
+  const [performanceMode, setPerformanceMode] = useState(true) // Start with performance mode ON
 
   // Configure camera controls based on navigation mode
   const configureCameraControls = useCallback((viewer: CesiumViewer, mode: NavigationMode) => {
     const controller = viewer.scene.screenSpaceCameraController
 
-    // Reset all to defaults first
+    // Reset all enables
     controller.enableRotate = true
     controller.enableTranslate = true
     controller.enableZoom = true
     controller.enableTilt = true
     controller.enableLook = true
 
-    // Configure based on mode
+    // Reset all event types to empty first (critical for clean mode switching)
+    controller.rotateEventTypes = []
+    controller.translateEventTypes = []
+    controller.zoomEventTypes = []
+    controller.tiltEventTypes = []
+
+    // Configure based on mode (Shift+drag for pan always available as fallback)
     switch (mode) {
       case "orbit":
-        // Default orbit mode - left click rotates
         controller.rotateEventTypes = [CameraEventType.LEFT_DRAG]
-        controller.translateEventTypes = [CameraEventType.RIGHT_DRAG]
+        controller.translateEventTypes = [
+          CameraEventType.RIGHT_DRAG,
+          { eventType: CameraEventType.LEFT_DRAG, modifier: KeyboardEventModifier.SHIFT },
+        ]
         controller.zoomEventTypes = [
           CameraEventType.WHEEL,
           CameraEventType.PINCH,
@@ -61,7 +80,6 @@ export function CesiumViewerComponent({ tilesetUrl = "/data/alpha/tileset.json" 
         break
 
       case "pan":
-        // Pan mode - left click translates/pans
         controller.translateEventTypes = [CameraEventType.LEFT_DRAG]
         controller.rotateEventTypes = [CameraEventType.RIGHT_DRAG]
         controller.zoomEventTypes = [
@@ -73,7 +91,6 @@ export function CesiumViewerComponent({ tilesetUrl = "/data/alpha/tileset.json" 
         break
 
       case "zoom":
-        // Zoom mode - left click drag zooms
         controller.zoomEventTypes = [CameraEventType.LEFT_DRAG, CameraEventType.WHEEL, CameraEventType.PINCH]
         controller.rotateEventTypes = [CameraEventType.RIGHT_DRAG]
         controller.translateEventTypes = [CameraEventType.MIDDLE_DRAG]
@@ -81,13 +98,7 @@ export function CesiumViewerComponent({ tilesetUrl = "/data/alpha/tileset.json" 
         break
     }
 
-    // Always enable Shift+drag for pan (regardless of mode)
-    controller.translateEventTypes = [
-      ...(Array.isArray(controller.translateEventTypes) ? controller.translateEventTypes : []),
-      { eventType: CameraEventType.LEFT_DRAG, modifier: KeyboardEventModifier.SHIFT },
-    ]
-
-    // Zoom settings for better trackpad experience
+    // Zoom settings
     controller.minimumZoomDistance = 1
     controller.maximumZoomDistance = 100000
     controller.inertiaZoom = 0.5
@@ -130,23 +141,109 @@ export function CesiumViewerComponent({ tilesetUrl = "/data/alpha/tileset.json" 
     }
   }, [])
 
+  // Apply performance settings to tileset
+  const applyTilesetPerformance = useCallback((tileset: Cesium3DTilesetClass, highPerf: boolean) => {
+    if (highPerf) {
+      // Performance mode: aggressive optimization
+      tileset.maximumScreenSpaceError = 24 // Higher = less detail, better perf
+      tileset.skipLevelOfDetail = true
+      tileset.preferLeaves = true
+      tileset.dynamicScreenSpaceError = true
+      tileset.dynamicScreenSpaceErrorDensity = 0.002
+      tileset.dynamicScreenSpaceErrorFactor = 8.0 // More aggressive during movement
+      tileset.dynamicScreenSpaceErrorHeightFalloff = 0.25
+      tileset.foveatedScreenSpaceError = true
+      tileset.foveatedConeSize = 0.15
+      tileset.foveatedMinimumScreenSpaceErrorRelaxation = 0.0
+      tileset.immediatelyLoadDesiredLevelOfDetail = false
+      tileset.cacheBytes = 256 * 1024 * 1024 // 256MB cache (less memory pressure)
+      tileset.maximumCacheOverflowBytes = 128 * 1024 * 1024
+      // Reduce concurrent tile loads
+      tileset.loadSiblings = false
+    } else {
+      // Quality mode: favor detail over speed
+      tileset.maximumScreenSpaceError = 4
+      tileset.skipLevelOfDetail = false
+      tileset.preferLeaves = false
+      tileset.dynamicScreenSpaceError = false
+      tileset.foveatedScreenSpaceError = false
+      tileset.immediatelyLoadDesiredLevelOfDetail = true
+      tileset.cacheBytes = 1024 * 1024 * 1024
+      tileset.loadSiblings = true
+    }
+  }, [])
+
   const handleTilesetReady = useCallback(
     (tileset: Cesium3DTilesetClass) => {
       console.log("Tileset ready:", tileset)
       tilesetRef.current = tileset
+
+      // Apply performance settings
+      applyTilesetPerformance(tileset, performanceMode)
+
       setIsLoading(false)
 
       setTimeout(() => {
         zoomToTileset()
       }, 100)
     },
-    [zoomToTileset]
+    [zoomToTileset, performanceMode, applyTilesetPerformance]
   )
 
   const handleTilesetError = useCallback((error: unknown) => {
     console.error("Tileset error:", error)
     setIsLoading(false)
     setError("Failed to load 3D tileset. Check if the data files exist.")
+  }, [])
+
+  // Apply scene-level performance settings
+  const applyScenePerformance = useCallback((viewer: CesiumViewer, highPerf: boolean) => {
+    const scene = viewer.scene
+
+    if (highPerf) {
+      // Request render mode - only render when needed
+      scene.requestRenderMode = true
+      scene.maximumRenderTimeChange = Infinity
+
+      // Target frame rate (prevents over-rendering)
+      viewer.targetFrameRate = 60
+
+      // Disable expensive post-processing
+      scene.postProcessStages.fxaa.enabled = false
+      scene.fog.enabled = false
+      scene.highDynamicRange = false
+
+      // Disable globe entirely for pure model viewing
+      scene.globe.show = false
+      scene.globe.enableLighting = false
+      scene.globe.showGroundAtmosphere = false
+      scene.globe.depthTestAgainstTerrain = false
+
+      // Disable sky rendering
+      if (scene.skyBox) scene.skyBox.show = false
+      if (scene.skyAtmosphere) scene.skyAtmosphere.show = false
+      if (scene.sun) scene.sun.show = false
+      if (scene.moon) scene.moon.show = false
+
+      // Optimize rendering pipeline
+      scene.logarithmicDepthBuffer = false
+      scene.useDepthPicking = false
+      scene.pickTranslucentDepth = false
+
+      // Reduce shadow complexity
+      scene.shadowMap.enabled = false
+
+      scene.debugShowFramesPerSecond = false // Set to true to debug
+    } else {
+      scene.requestRenderMode = false
+      viewer.targetFrameRate = 60
+      scene.postProcessStages.fxaa.enabled = true
+      scene.fog.enabled = true
+      scene.highDynamicRange = true
+      scene.globe.enableLighting = true
+      scene.logarithmicDepthBuffer = true
+      scene.useDepthPicking = true
+    }
   }, [])
 
   const handleViewerReady = useCallback(
@@ -162,8 +259,11 @@ export function CesiumViewerComponent({ tilesetUrl = "/data/alpha/tileset.json" 
 
       // Enable zoom toward cursor (improves zoom UX)
       viewer.scene.screenSpaceCameraController.enableCollisionDetection = false
+
+      // Apply performance settings
+      applyScenePerformance(viewer, performanceMode)
     },
-    [showGlobe, navMode, configureCameraControls]
+    [showGlobe, navMode, configureCameraControls, performanceMode, applyScenePerformance]
   )
 
   const resetCamera = useCallback(() => {
@@ -193,6 +293,19 @@ export function CesiumViewerComponent({ tilesetUrl = "/data/alpha/tileset.json" 
     })
   }, [])
 
+  const togglePerformanceMode = useCallback(() => {
+    setPerformanceMode((prev) => {
+      const newValue = !prev
+      if (viewerRef.current) {
+        applyScenePerformance(viewerRef.current, newValue)
+      }
+      if (tilesetRef.current) {
+        applyTilesetPerformance(tilesetRef.current, newValue)
+      }
+      return newValue
+    })
+  }, [applyScenePerformance, applyTilesetPerformance])
+
   return (
     <div ref={containerRef} className="relative w-full h-full">
       {/* Loading overlay */}
@@ -215,73 +328,95 @@ export function CesiumViewerComponent({ tilesetUrl = "/data/alpha/tileset.json" 
         </div>
       )}
 
-      {/* View mode controls */}
-      <div className="absolute top-4 left-4 z-20 flex flex-col gap-2">
-        <div className="bg-slate-900/80 backdrop-blur-sm rounded-xl p-2 flex flex-col gap-1.5 border border-slate-700/50">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={toggleGlobe}
-            title={showGlobe ? "Hide globe" : "Show globe"}
-            className="text-slate-300 hover:text-white hover:bg-slate-700/50"
-          >
-            {showGlobe ? <GlobeIcon className="size-4" /> : <Layers className="size-4" />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={toggleWireframe}
-            title={showWireframe ? "Hide wireframe" : "Show wireframe"}
-            className={`hover:bg-slate-700/50 ${showWireframe ? "text-emerald-400" : "text-slate-300 hover:text-white"}`}
-          >
-            <Grid3x3 className="size-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={resetCamera}
-            title="Reset camera"
-            className="text-slate-300 hover:text-white hover:bg-slate-700/50"
-          >
-            <RotateCcw className="size-4" />
-          </Button>
-        </div>
+      {/* View mode controls - NO backdrop-blur for performance */}
+      <TooltipProvider>
+        <div className="absolute top-4 left-4 z-20 flex flex-col gap-2">
+          <div className="bg-slate-900/95 rounded-xl p-2 flex flex-col gap-1.5 border border-slate-700/50">
+            <Tooltip>
+              <TooltipTrigger>
+                <Button variant="glass" size="icon-sm" onClick={toggleGlobe}>
+                  {showGlobe ? <GlobeIcon className="size-4" /> : <LayersIcon className="size-4" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{showGlobe ? "Hide globe" : "Show globe"}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger>
+                <Button variant={showWireframe ? "glass-active" : "glass"} size="icon-sm" onClick={toggleWireframe}>
+                  <Grid3x3Icon className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{showWireframe ? "Hide wireframe" : "Show wireframe"}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger>
+                <Button variant="glass" size="icon-sm" onClick={resetCamera}>
+                  <RotateCcwIcon className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Reset camera</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant={performanceMode ? "glass-warning" : "glass"}
+                  size="icon-sm"
+                  onClick={togglePerformanceMode}
+                >
+                  <ZapIcon className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {performanceMode ? "Switch to quality mode" : "Switch to performance mode"}
+              </TooltipContent>
+            </Tooltip>
+          </div>
 
-        {/* Navigation mode controls */}
-        <div className="bg-slate-900/80 backdrop-blur-sm rounded-xl p-2 flex flex-col gap-1.5 border border-slate-700/50">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => setNavMode("orbit")}
-            title="Orbit mode (rotate around model)"
-            className={`hover:bg-slate-700/50 ${navMode === "orbit" ? "text-emerald-400 bg-slate-700/50" : "text-slate-300 hover:text-white"}`}
-          >
-            <RotateCw className="size-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => setNavMode("pan")}
-            title="Pan mode (drag to move view) - also Shift+drag"
-            className={`hover:bg-slate-700/50 ${navMode === "pan" ? "text-emerald-400 bg-slate-700/50" : "text-slate-300 hover:text-white"}`}
-          >
-            <Move className="size-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => setNavMode("zoom")}
-            title="Zoom mode (drag to zoom) - also Ctrl+drag"
-            className={`hover:bg-slate-700/50 ${navMode === "zoom" ? "text-emerald-400 bg-slate-700/50" : "text-slate-300 hover:text-white"}`}
-          >
-            <ZoomIn className="size-4" />
-          </Button>
+          {/* Navigation mode controls */}
+          <div className="bg-slate-900/95 rounded-xl p-2 flex flex-col gap-1.5 border border-slate-700/50">
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant={navMode === "orbit" ? "glass-active" : "glass"}
+                  size="icon-sm"
+                  onClick={() => setNavMode("orbit")}
+                >
+                  <RotateCwIcon className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Orbit mode</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant={navMode === "pan" ? "glass-active" : "glass"}
+                  size="icon-sm"
+                  onClick={() => setNavMode("pan")}
+                >
+                  <MoveIcon className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Pan mode</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger>
+                <Button
+                  variant={navMode === "zoom" ? "glass-active" : "glass"}
+                  size="icon-sm"
+                  onClick={() => setNavMode("zoom")}
+                >
+                  <ZoomInIcon className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Zoom mode (Ctrl+drag)</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
-      </div>
+      </TooltipProvider>
 
       {/* Model info badge */}
       <div className="absolute bottom-4 left-4 z-20">
-        <div className="bg-slate-900/80 backdrop-blur-sm rounded-lg px-3 py-1.5 text-xs text-slate-300 border border-slate-700/50">
+        <div className="bg-slate-900/95 rounded-lg px-3 py-1.5 text-xs text-slate-300 border border-slate-700/50">
           <span className="text-emerald-400 font-medium">Stratum</span>
           <span className="mx-2 text-slate-600">|</span>
           <span>alpha</span>
@@ -290,13 +425,13 @@ export function CesiumViewerComponent({ tilesetUrl = "/data/alpha/tileset.json" 
 
       {/* Keyboard hints */}
       <div className="absolute bottom-4 right-4 z-20">
-        <div className="bg-slate-900/80 backdrop-blur-sm rounded-lg px-3 py-1.5 text-xs text-slate-500 border border-slate-700/50">
+        <div className="bg-slate-900/95 rounded-lg px-3 py-1.5 text-xs text-slate-500 border border-slate-700/50">
           <span className="text-slate-400">Shift</span>=Pan · <span className="text-slate-400">Ctrl</span>=Zoom ·{" "}
           <span className="text-slate-400">Scroll</span>=Zoom
         </div>
       </div>
 
-      {/* Cesium Viewer */}
+      {/* Cesium Viewer - optimized for performance */}
       <Viewer
         full
         ref={(e) => {
@@ -314,14 +449,15 @@ export function CesiumViewerComponent({ tilesetUrl = "/data/alpha/tileset.json" 
         fullscreenButton={false}
         infoBox={false}
         selectionIndicator={false}
+        shadows={false}
+        requestRenderMode={performanceMode}
+        maximumRenderTimeChange={performanceMode ? Infinity : undefined}
       >
-        <Globe show={showGlobe} />
-        {!showGlobe && (
-          <>
-            <SkyBox show={false} />
-            <SkyAtmosphere show={false} />
-          </>
-        )}
+        {/* Only render Globe when explicitly enabled */}
+        {showGlobe && <Globe enableLighting={!performanceMode} />}
+        {/* Disable sky elements in performance mode */}
+        <SkyBox show={showGlobe && !performanceMode} />
+        <SkyAtmosphere show={showGlobe && !performanceMode} />
         <Cesium3DTileset url={tilesetUrl} onReady={handleTilesetReady} onError={handleTilesetError} />
       </Viewer>
     </div>
