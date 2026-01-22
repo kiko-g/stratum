@@ -1,109 +1,94 @@
-"use client";
+"use client"
 
-import { useRef, useState, useCallback } from "react";
-import { Viewer, Cesium3DTileset, Globe, SkyBox, SkyAtmosphere } from "resium";
-import {
-  Cesium3DTileset as Cesium3DTilesetClass,
-  Viewer as CesiumViewer,
-  Color,
-  Cartesian3,
-  HeadingPitchRange,
-} from "cesium";
-import { Button } from "@/components/ui/button";
-import { Globe as GlobeIcon, RotateCcw, Layers } from "lucide-react";
+import { useRef, useState, useCallback } from "react"
+import { Viewer, Cesium3DTileset, Globe, SkyBox, SkyAtmosphere } from "resium"
+import { Cesium3DTileset as Cesium3DTilesetClass, Viewer as CesiumViewer, Color, HeadingPitchRange } from "cesium"
+import { Button } from "@/components/ui/button"
+import { Globe as GlobeIcon, RotateCcw, Layers } from "lucide-react"
 
 // Set Cesium base URL to CDN (no account needed)
 if (typeof window !== "undefined") {
-  (window as unknown as { CESIUM_BASE_URL: string }).CESIUM_BASE_URL =
-    "https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/";
+  ;(window as unknown as { CESIUM_BASE_URL: string }).CESIUM_BASE_URL =
+    "https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/"
 }
 
 interface CesiumViewerProps {
-  tilesetUrl?: string;
+  tilesetUrl?: string
 }
 
-export function CesiumViewerComponent({
-  tilesetUrl = "/data/alpha/tileset.json",
-}: CesiumViewerProps) {
-  const viewerRef = useRef<CesiumViewer | null>(null);
-  const tilesetRef = useRef<Cesium3DTilesetClass | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [showGlobe, setShowGlobe] = useState(false); // Start with globe hidden for better model view
+export function CesiumViewerComponent({ tilesetUrl = "/data/alpha/tileset.json" }: CesiumViewerProps) {
+  const viewerRef = useRef<CesiumViewer | null>(null)
+  const tilesetRef = useRef<Cesium3DTilesetClass | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [showGlobe, setShowGlobe] = useState(false) // Start with globe hidden for better model view
 
   const zoomToTileset = useCallback(() => {
-    const viewer = viewerRef.current;
-    const tileset = tilesetRef.current;
+    const viewer = viewerRef.current
+    const tileset = tilesetRef.current
 
-    if (!viewer || !tileset) return;
+    if (!viewer || !tileset) return
 
     try {
       // Get the bounding sphere of the tileset
-      const boundingSphere = tileset.boundingSphere;
+      const boundingSphere = tileset.boundingSphere
       if (boundingSphere) {
         // Calculate a good viewing distance
-        const range = boundingSphere.radius * 2.5;
-        viewer.camera.viewBoundingSphere(
-          boundingSphere,
-          new HeadingPitchRange(0, -0.5, range),
-        );
+        const range = boundingSphere.radius * 2.5
+        viewer.camera.viewBoundingSphere(boundingSphere, new HeadingPitchRange(0, -0.5, range))
       }
     } catch (e) {
-      console.warn("Could not zoom to tileset:", e);
+      console.warn("Could not zoom to tileset:", e)
     }
-  }, []);
+  }, [])
 
   const handleTilesetReady = useCallback(
     (tileset: Cesium3DTilesetClass) => {
-      console.log("Tileset ready:", tileset);
-      tilesetRef.current = tileset;
-      setIsLoading(false);
+      console.log("Tileset ready:", tileset)
+      tilesetRef.current = tileset
+      setIsLoading(false)
 
       // Small delay to ensure everything is initialized
       setTimeout(() => {
-        zoomToTileset();
-      }, 100);
+        zoomToTileset()
+      }, 100)
     },
-    [zoomToTileset],
-  );
+    [zoomToTileset]
+  )
 
   const handleTilesetError = useCallback((error: unknown) => {
-    console.error("Tileset error:", error);
-    setIsLoading(false);
-    setError("Failed to load 3D tileset. Check if the data files exist.");
-  }, []);
+    console.error("Tileset error:", error)
+    setIsLoading(false)
+    setError("Failed to load 3D tileset. Check if the data files exist.")
+  }, [])
 
   const handleViewerReady = useCallback(
     (viewer: CesiumViewer) => {
-      viewerRef.current = viewer;
+      viewerRef.current = viewer
 
       // Set background color for non-globe mode
-      viewer.scene.backgroundColor = Color.fromCssColorString("#0f172a");
-      viewer.scene.globe.show = showGlobe;
+      viewer.scene.backgroundColor = Color.fromCssColorString("#0f172a")
+      viewer.scene.globe.show = showGlobe
     },
-    [showGlobe],
-  );
+    [showGlobe]
+  )
 
   const resetCamera = useCallback(() => {
-    zoomToTileset();
-  }, [zoomToTileset]);
+    zoomToTileset()
+  }, [zoomToTileset])
 
   const toggleGlobe = useCallback(() => {
     setShowGlobe((prev) => {
-      const newValue = !prev;
+      const newValue = !prev
       if (viewerRef.current) {
-        viewerRef.current.scene.globe.show = newValue;
-        if (!newValue) {
-          viewerRef.current.scene.skyBox.show = false;
-          viewerRef.current.scene.skyAtmosphere.show = false;
-        } else {
-          viewerRef.current.scene.skyBox.show = true;
-          viewerRef.current.scene.skyAtmosphere.show = true;
-        }
+        const { scene } = viewerRef.current
+        scene.globe.show = newValue
+        if (scene.skyBox) scene.skyBox.show = newValue
+        if (scene.skyAtmosphere) scene.skyAtmosphere.show = newValue
       }
-      return newValue;
-    });
-  }, []);
+      return newValue
+    })
+  }, [])
 
   return (
     <div className="relative w-full h-full">
@@ -112,9 +97,7 @@ export function CesiumViewerComponent({
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900">
           <div className="flex flex-col items-center gap-4">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500" />
-            <div className="text-white text-lg font-medium">
-              Loading 3D model...
-            </div>
+            <div className="text-white text-lg font-medium">Loading 3D model...</div>
           </div>
         </div>
       )}
@@ -124,9 +107,7 @@ export function CesiumViewerComponent({
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900">
           <div className="flex flex-col items-center gap-4 max-w-md text-center px-4">
             <div className="text-red-400 text-lg font-medium">{error}</div>
-            <p className="text-slate-400 text-sm">
-              Make sure tileset.json and .b3dm files are in public/data/alpha/
-            </p>
+            <p className="text-slate-400 text-sm">Make sure tileset.json and .b3dm files are in public/data/alpha/</p>
           </div>
         </div>
       )}
@@ -141,11 +122,7 @@ export function CesiumViewerComponent({
             title={showGlobe ? "Hide globe" : "Show globe"}
             className="text-slate-300 hover:text-white hover:bg-slate-700/50"
           >
-            {showGlobe ? (
-              <GlobeIcon className="size-4" />
-            ) : (
-              <Layers className="size-4" />
-            )}
+            {showGlobe ? <GlobeIcon className="size-4" /> : <Layers className="size-4" />}
           </Button>
           <Button
             variant="ghost"
@@ -173,7 +150,7 @@ export function CesiumViewerComponent({
         full
         ref={(e) => {
           if (e?.cesiumElement && !viewerRef.current) {
-            handleViewerReady(e.cesiumElement);
+            handleViewerReady(e.cesiumElement)
           }
         }}
         timeline={false}
@@ -194,12 +171,8 @@ export function CesiumViewerComponent({
             <SkyAtmosphere show={false} />
           </>
         )}
-        <Cesium3DTileset
-          url={tilesetUrl}
-          onReady={handleTilesetReady}
-          onError={handleTilesetError}
-        />
+        <Cesium3DTileset url={tilesetUrl} onReady={handleTilesetReady} onError={handleTilesetError} />
       </Viewer>
     </div>
-  );
+  )
 }
