@@ -314,7 +314,14 @@ describe("CesiumViewerComponent", () => {
       render(<CesiumViewerComponent />)
 
       expect(screen.getByText("Stratum")).toBeInTheDocument()
-      expect(screen.getByText("alpha")).toBeInTheDocument()
+      expect(screen.getByText("Alpha")).toBeInTheDocument()
+    })
+
+    it("renders model info badge with scene name from tilesetUrl", () => {
+      render(<CesiumViewerComponent tilesetUrl="/data/corujeira/tileset.json" />)
+
+      expect(screen.getByText("Stratum")).toBeInTheDocument()
+      expect(screen.getByText("Corujeira")).toBeInTheDocument()
     })
 
     it("renders keyboard hints", () => {

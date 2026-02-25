@@ -37,7 +37,21 @@ interface CesiumViewerProps {
 
 const DEMO_TILESET_URL = "/data/alpha/tileset.json"
 
+function getSceneDisplayNameFromUrl(url: string): string {
+  const match = url.match(/\/([^/]+)\/tileset\.json$/i)
+  const segment = match ? match[1] : "model"
+  return segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase()
+}
+
+function getDataPathFromUrl(url: string): string {
+  const path = url.startsWith("/") ? url.slice(1) : url
+  const dir = path.replace(/\/tileset\.json$/i, "/")
+  return `public/${dir}`
+}
+
 export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumViewerProps) {
+  const sceneDisplayName = getSceneDisplayNameFromUrl(tilesetUrl)
+  const dataPath = getDataPathFromUrl(tilesetUrl)
   const viewerRef = useRef<CesiumViewer | null>(null)
   const tilesetRef = useRef<Cesium3DTilesetClass | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -330,7 +344,7 @@ export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumV
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900">
           <div className="flex flex-col items-center gap-4 max-w-md text-center px-4">
             <div className="text-red-400 text-lg font-medium">{error}</div>
-            <p className="text-slate-400 text-sm">Make sure tileset.json and .b3dm files are in public/data/alpha/</p>
+            <p className="text-slate-400 text-sm">Make sure tileset.json and .b3dm files are in {dataPath}</p>
           </div>
         </div>
       )}
@@ -422,11 +436,11 @@ export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumV
       </TooltipProvider>
 
       {/* Model info badge */}
-      <div className="absolute bottom-4 left-4 z-20">
-        <div className="bg-slate-900/95 rounded-lg px-3 py-1.5 text-xs text-slate-300 border border-slate-700/50">
-          <span className="text-emerald-400 font-medium">Stratum</span>
+      <div className="absolute top-4 right-4 z-20">
+        <div className="bg-slate-800 rounded-lg px-4 py-2.5 text-sm text-slate-300 border border-slate-700/50">
+          <span className="text-emerald-400 font-semibold">Stratum</span>
           <span className="mx-2 text-slate-600">|</span>
-          <span>alpha</span>
+          <span>{sceneDisplayName}</span>
         </div>
       </div>
 

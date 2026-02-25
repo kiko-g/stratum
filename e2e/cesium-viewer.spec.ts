@@ -16,8 +16,7 @@ async function collectConsoleErrors(page: Page): Promise<string[]> {
 
 test.describe("Cesium Viewer", () => {
   test.beforeEach(async ({ page }) => {
-    // Navigate to the page with the Cesium viewer
-    await page.goto("/")
+    await page.goto("/view/alpha")
   })
 
   test("viewer loads without JavaScript errors", async ({ page }) => {
@@ -216,9 +215,8 @@ test.describe("Cesium Viewer", () => {
   test("model info badge is visible", async ({ page }) => {
     await page.waitForTimeout(2000)
 
-    // Check model info badge
     await expect(page.getByText("Stratum")).toBeVisible()
-    await expect(page.getByText("alpha")).toBeVisible()
+    await expect(page.getByText("Alpha")).toBeVisible()
   })
 
   test("cursor changes with navigation mode", async ({ page }) => {
