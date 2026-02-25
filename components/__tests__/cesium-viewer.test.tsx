@@ -231,7 +231,7 @@ describe("CesiumViewerComponent", () => {
       expect(controller.zoomEventTypes).toContain(CameraEventType.LEFT_DRAG)
     })
 
-    it("configures camera controls with correct event types for orbit mode", async () => {
+    it("configures camera controls with correct event types for pan mode (default)", async () => {
       render(<CesiumViewerComponent />)
 
       await act(async () => {
@@ -240,9 +240,8 @@ describe("CesiumViewerComponent", () => {
 
       const controller = mockViewerInstance.scene.screenSpaceCameraController
 
-      // Orbit mode is default
-      expect(controller.rotateEventTypes).toContain(CameraEventType.LEFT_DRAG)
-      expect(controller.translateEventTypes).toContainEqual(CameraEventType.RIGHT_DRAG)
+      expect(controller.translateEventTypes).toContain(CameraEventType.LEFT_DRAG)
+      expect(controller.rotateEventTypes).toContain(CameraEventType.RIGHT_DRAG)
       expect(controller.zoomEventTypes).toContain(CameraEventType.WHEEL)
     })
   })
@@ -276,17 +275,23 @@ describe("CesiumViewerComponent", () => {
 
       const viewerContainer = container.firstChild as HTMLElement
 
-      // Default orbit mode - grab cursor
+      // Default pan mode - grab cursor
       expect(viewerContainer.style.cursor).toBe("grab")
 
-      // Switch to pan mode
+      // Switch to orbit mode then back to pan to confirm pan uses grab
+      const orbitButton = getButtons()[4]
+      await act(async () => {
+        fireEvent.click(orbitButton)
+        vi.runAllTimers()
+      })
+      expect(viewerContainer.style.cursor).toBe("grab")
+
       const panButton = getButtons()[5]
       await act(async () => {
         fireEvent.click(panButton)
         vi.runAllTimers()
       })
-
-      expect(viewerContainer.style.cursor).toBe("move")
+      expect(viewerContainer.style.cursor).toBe("grab")
 
       // Switch to zoom mode
       const zoomButton = getButtons()[6]
@@ -344,8 +349,8 @@ describe("CesiumViewerComponent", () => {
     it("renders keyboard hints", () => {
       render(<CesiumViewerComponent />)
 
-      expect(screen.getByText(/Shift/)).toBeInTheDocument()
-      expect(screen.getByText(/Ctrl/)).toBeInTheDocument()
+      expect(screen.getByText(/Left/)).toBeInTheDocument()
+      expect(screen.getByText(/Right/)).toBeInTheDocument()
       expect(screen.getByText(/Scroll/)).toBeInTheDocument()
     })
 
@@ -370,11 +375,11 @@ describe("CesiumViewerComponent", () => {
       const orbitButton = buttons[4]
       const panButton = buttons[5]
 
-      // Orbit is default - should have active variant (emerald color)
-      expect(orbitButton.className).toContain("text-emerald-400")
+      // Pan is default - should have active variant (emerald color)
+      expect(panButton.className).toContain("text-emerald-400")
 
-      // Pan should not be active (slate color for inactive)
-      expect(panButton.className).toContain("text-slate-300")
+      // Orbit should not be active (slate color for inactive)
+      expect(orbitButton.className).toContain("text-slate-300")
     })
 
     it("updates active state when switching modes", async () => {

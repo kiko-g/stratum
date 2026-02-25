@@ -97,6 +97,35 @@ export const SkyAtmosphere: React.FC<SkyAtmosphereProps> = ({ show }) => {
   return <div data-testid="cesium-sky-atmosphere" data-show={show} />
 }
 
+// Mock ScreenSpaceCameraController - applies props to the mock viewer's controller
+interface ScreenSpaceCameraControllerProps {
+  rotateEventTypes?: unknown[]
+  translateEventTypes?: unknown[]
+  zoomEventTypes?: unknown[]
+  tiltEventTypes?: unknown[]
+  minimumZoomDistance?: number
+  maximumZoomDistance?: number
+  inertiaZoom?: number
+  zoomFactor?: number
+  enableCollisionDetection?: boolean
+}
+
+export const ScreenSpaceCameraController: React.FC<ScreenSpaceCameraControllerProps> = (props) => {
+  const ctrl = mockViewerInstance.scene.screenSpaceCameraController
+  useEffect(() => {
+    if (props.rotateEventTypes !== undefined) ctrl.rotateEventTypes = props.rotateEventTypes as never
+    if (props.translateEventTypes !== undefined) ctrl.translateEventTypes = props.translateEventTypes as never
+    if (props.zoomEventTypes !== undefined) ctrl.zoomEventTypes = props.zoomEventTypes as never
+    if (props.tiltEventTypes !== undefined) ctrl.tiltEventTypes = props.tiltEventTypes as never
+    if (props.minimumZoomDistance !== undefined) ctrl.minimumZoomDistance = props.minimumZoomDistance
+    if (props.maximumZoomDistance !== undefined) ctrl.maximumZoomDistance = props.maximumZoomDistance
+    if (props.inertiaZoom !== undefined) ctrl.inertiaZoom = props.inertiaZoom
+    if (props.zoomFactor !== undefined) ctrl.zoomFactor = props.zoomFactor
+    if (props.enableCollisionDetection !== undefined) ctrl.enableCollisionDetection = props.enableCollisionDetection
+  })
+  return null
+}
+
 // Reset mocks helper for tests
 export const resetMocks = () => {
   // Reset viewer mock

@@ -1,8 +1,8 @@
 "use client"
 
-import { useRef, useState, useCallback, useEffect } from "react"
+import { useRef, useState, useCallback, useEffect, useMemo } from "react"
 import { useSearchParams } from "next/navigation"
-import { Viewer, Cesium3DTileset, Globe, SkyBox, SkyAtmosphere } from "resium"
+import { Viewer, Cesium3DTileset, Globe, SkyBox, SkyAtmosphere, ScreenSpaceCameraController } from "resium"
 import {
   Cesium3DTileset as Cesium3DTilesetClass,
   Viewer as CesiumViewer,
@@ -38,6 +38,14 @@ interface CesiumViewerProps {
 
 const DEMO_TILESET_URL = "/data/alpha/tileset.json"
 
+const NAV_CURSORS: Record<NavigationMode, string> = {
+  orbit: "grab",
+  pan: "grab",
+  zoom: "zoom-in",
+}
+
+const ROTATE_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 15a9 9 0 1 0 2.13-9.36L3.5 8'/%3E%3Cpolyline points='3.5 3 3.5 8 8.5 8'/%3E%3C/svg%3E") 12 12, auto`
+
 function getSceneDisplayNameFromUrl(url: string): string {
   const match = url.match(/\/([^/]+)\/tileset\.json$/i)
   const segment = match ? match[1] : "model"
@@ -62,95 +70,104 @@ export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumV
   const sceneDisplayName = getSceneDisplayNameFromUrl(tilesetUrl)
   const dataPath = getDataPathFromUrl(tilesetUrl)
   const viewerRef = useRef<CesiumViewer | null>(null)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const tilesetRef = useRef<Cesium3DTilesetClass | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showGlobe, setShowGlobe] = useState(false)
   const [showWireframe, setShowWireframe] = useState(false)
-  const [navMode, setNavMode] = useState<NavigationMode>("orbit")
+  const [navMode, setNavMode] = useState<NavigationMode>("pan")
+  const [isPanDragging, setIsPanDragging] = useState(false)
+  const [isRotateDragging, setIsRotateDragging] = useState(false)
   const [ecoMode, setEcoMode] = useState(() => ecoModeFromSearchParams(searchParams))
 
   useEffect(() => {
     setEcoMode(ecoModeFromSearchParams(searchParams))
   }, [searchParams])
 
-  // Configure camera controls based on navigation mode
-  const configureCameraControls = useCallback((viewer: CesiumViewer, mode: NavigationMode) => {
-    const controller = viewer.scene.screenSpaceCameraController
-
-    // Reset all enables
-    controller.enableRotate = true
-    controller.enableTranslate = true
-    controller.enableZoom = true
-    controller.enableTilt = true
-    controller.enableLook = true
-
-    // Reset all event types to empty first (critical for clean mode switching)
-    controller.rotateEventTypes = []
-    controller.translateEventTypes = []
-    controller.zoomEventTypes = []
-    controller.tiltEventTypes = []
-
-    // Configure based on mode (Shift+drag for pan always available as fallback)
-    switch (mode) {
+  const controllerProps = useMemo(() => {
+    const zoomCommon = [
+      CameraEventType.WHEEL,
+      CameraEventType.PINCH,
+      { eventType: CameraEventType.LEFT_DRAG, modifier: KeyboardEventModifier.CTRL },
+    ]
+    switch (navMode) {
       case "orbit":
-        controller.rotateEventTypes = [CameraEventType.LEFT_DRAG]
-        controller.translateEventTypes = [
-          CameraEventType.RIGHT_DRAG,
-          { eventType: CameraEventType.LEFT_DRAG, modifier: KeyboardEventModifier.SHIFT },
-        ]
-        controller.zoomEventTypes = [
-          CameraEventType.WHEEL,
-          CameraEventType.PINCH,
-          { eventType: CameraEventType.LEFT_DRAG, modifier: KeyboardEventModifier.CTRL },
-        ]
-        controller.tiltEventTypes = [CameraEventType.MIDDLE_DRAG]
-        break
-
+        return {
+          rotateEventTypes: [CameraEventType.LEFT_DRAG],
+          translateEventTypes: [
+            CameraEventType.RIGHT_DRAG,
+            { eventType: CameraEventType.LEFT_DRAG, modifier: KeyboardEventModifier.SHIFT },
+          ],
+          zoomEventTypes: zoomCommon,
+          tiltEventTypes: [CameraEventType.MIDDLE_DRAG],
+        }
       case "pan":
-        controller.translateEventTypes = [CameraEventType.LEFT_DRAG]
-        controller.rotateEventTypes = [CameraEventType.RIGHT_DRAG]
-        controller.zoomEventTypes = [
-          CameraEventType.WHEEL,
-          CameraEventType.PINCH,
-          { eventType: CameraEventType.LEFT_DRAG, modifier: KeyboardEventModifier.CTRL },
-        ]
-        controller.tiltEventTypes = [CameraEventType.MIDDLE_DRAG]
-        break
-
+        return {
+          translateEventTypes: [CameraEventType.LEFT_DRAG],
+          rotateEventTypes: [CameraEventType.RIGHT_DRAG],
+          zoomEventTypes: zoomCommon,
+          tiltEventTypes: [CameraEventType.MIDDLE_DRAG],
+        }
       case "zoom":
-        controller.zoomEventTypes = [CameraEventType.LEFT_DRAG, CameraEventType.WHEEL, CameraEventType.PINCH]
-        controller.rotateEventTypes = [CameraEventType.RIGHT_DRAG]
-        controller.translateEventTypes = [CameraEventType.MIDDLE_DRAG]
-        controller.tiltEventTypes = []
-        break
+        return {
+          zoomEventTypes: [CameraEventType.LEFT_DRAG, CameraEventType.WHEEL, CameraEventType.PINCH],
+          rotateEventTypes: [CameraEventType.RIGHT_DRAG],
+          translateEventTypes: [CameraEventType.MIDDLE_DRAG],
+          tiltEventTypes: [],
+        }
     }
+  }, [navMode])
 
-    // Zoom settings
+  const configureCameraControls = useCallback((viewer: CesiumViewer) => {
+    const controller = viewer.scene.screenSpaceCameraController
+    controller.enableCollisionDetection = false
     controller.minimumZoomDistance = 1
     controller.maximumZoomDistance = 100000
     controller.inertiaZoom = 0.5
     controller.zoomFactor = 5
   }, [])
 
-  // Update camera controls when nav mode changes
   useEffect(() => {
-    const viewer = viewerRef.current
-    if (!viewer || viewer.isDestroyed()) return
-    configureCameraControls(viewer, navMode)
-  }, [navMode, configureCameraControls])
+    const cursor =
+      navMode === "pan"
+        ? isPanDragging
+          ? "grabbing"
+          : isRotateDragging
+            ? ROTATE_CURSOR
+            : "grab"
+        : NAV_CURSORS[navMode]
+    if (containerRef.current) containerRef.current.style.cursor = cursor
+    if (canvasRef.current) canvasRef.current.style.cursor = cursor
+  }, [navMode, isPanDragging, isRotateDragging])
 
-  // Update cursor based on navigation mode
   useEffect(() => {
-    if (!containerRef.current) return
+    const el = containerRef.current
+    if (!el) return
 
-    const cursors: Record<NavigationMode, string> = {
-      orbit: "grab",
-      pan: "move",
-      zoom: "zoom-in",
+    const onPointerDown = (e: PointerEvent) => {
+      if (navMode !== "pan") return
+      if (e.button === 0) setIsPanDragging(true)
+      if (e.button === 2) setIsRotateDragging(true)
     }
-    containerRef.current.style.cursor = cursors[navMode]
+    const onPointerUp = () => {
+      setIsPanDragging(false)
+      setIsRotateDragging(false)
+    }
+
+    el.addEventListener("pointerdown", onPointerDown, { capture: true })
+    el.addEventListener("pointerup", onPointerUp, { capture: true })
+    el.addEventListener("pointerleave", onPointerUp, { capture: true })
+    el.addEventListener("pointercancel", onPointerUp, { capture: true })
+    document.addEventListener("pointerup", onPointerUp)
+    return () => {
+      el.removeEventListener("pointerdown", onPointerDown, { capture: true })
+      el.removeEventListener("pointerup", onPointerUp, { capture: true })
+      el.removeEventListener("pointerleave", onPointerUp, { capture: true })
+      el.removeEventListener("pointercancel", onPointerUp, { capture: true })
+      document.removeEventListener("pointerup", onPointerUp)
+    }
   }, [navMode])
 
   const zoomToTileset = useCallback(() => {
@@ -226,60 +243,56 @@ export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumV
   }, [])
 
   // Apply scene-level performance settings (showGlobe = user preference for quality mode)
-  const applyScenePerformance = useCallback(
-    (viewer: CesiumViewer, highPerf: boolean, showGlobePref: boolean) => {
-      const scene = viewer.scene
+  const applyScenePerformance = useCallback((viewer: CesiumViewer, highPerf: boolean, showGlobePref: boolean) => {
+    const scene = viewer.scene
 
-      if (highPerf) {
-        // Request render mode - only render when needed
-        scene.requestRenderMode = true
-        scene.maximumRenderTimeChange = Infinity
+    if (highPerf) {
+      // Request render mode - only render when needed
+      scene.requestRenderMode = true
+      scene.maximumRenderTimeChange = Infinity
 
-        // Target frame rate (prevents over-rendering)
-        viewer.targetFrameRate = 60
+      // Target frame rate (prevents over-rendering)
+      viewer.targetFrameRate = 60
 
-        // Disable expensive post-processing
-        scene.postProcessStages.fxaa.enabled = false
-        scene.fog.enabled = false
-        scene.highDynamicRange = false
+      // Disable expensive post-processing
+      scene.postProcessStages.fxaa.enabled = false
+      scene.fog.enabled = false
+      scene.highDynamicRange = false
 
-        // Disable globe entirely for pure model viewing
-        scene.globe.show = false
-        scene.globe.enableLighting = false
-        scene.globe.showGroundAtmosphere = false
-        scene.globe.depthTestAgainstTerrain = false
+      scene.globe.show = showGlobePref
+      scene.globe.enableLighting = false
+      scene.globe.showGroundAtmosphere = false
+      scene.globe.depthTestAgainstTerrain = false
 
-        // Disable sky rendering
-        if (scene.skyBox) scene.skyBox.show = false
-        if (scene.skyAtmosphere) scene.skyAtmosphere.show = false
-        if (scene.sun) scene.sun.show = false
-        if (scene.moon) scene.moon.show = false
+      // Disable sky rendering
+      if (scene.skyBox) scene.skyBox.show = false
+      if (scene.skyAtmosphere) scene.skyAtmosphere.show = false
+      if (scene.sun) scene.sun.show = false
+      if (scene.moon) scene.moon.show = false
 
-        // Optimize rendering pipeline
-        scene.logarithmicDepthBuffer = false
-        scene.useDepthPicking = false
-        scene.pickTranslucentDepth = false
+      // Optimize rendering pipeline
+      scene.logarithmicDepthBuffer = false
+      scene.useDepthPicking = false
+      scene.pickTranslucentDepth = false
 
-        // Reduce shadow complexity
-        scene.shadowMap.enabled = false
+      // Reduce shadow complexity
+      scene.shadowMap.enabled = false
 
-        scene.debugShowFramesPerSecond = false // Set to true to debug
-      } else {
-        scene.requestRenderMode = false
-        viewer.targetFrameRate = 60
-        scene.postProcessStages.fxaa.enabled = true
-        scene.fog.enabled = true
-        scene.highDynamicRange = true
-        scene.globe.enableLighting = true
-        scene.globe.show = showGlobePref
-        if (scene.skyBox) scene.skyBox.show = showGlobePref
-        if (scene.skyAtmosphere) scene.skyAtmosphere.show = showGlobePref
-        scene.logarithmicDepthBuffer = true
-        scene.useDepthPicking = true
-      }
-    },
-    [],
-  )
+      scene.debugShowFramesPerSecond = false // Set to true to debug
+    } else {
+      scene.requestRenderMode = false
+      viewer.targetFrameRate = 60
+      scene.postProcessStages.fxaa.enabled = true
+      scene.fog.enabled = true
+      scene.highDynamicRange = true
+      scene.globe.enableLighting = true
+      scene.globe.show = showGlobePref
+      if (scene.skyBox) scene.skyBox.show = showGlobePref
+      if (scene.skyAtmosphere) scene.skyAtmosphere.show = showGlobePref
+      scene.logarithmicDepthBuffer = true
+      scene.useDepthPicking = true
+    }
+  }, [])
 
   const handleViewerReady = useCallback(
     (viewer: CesiumViewer) => {
@@ -289,14 +302,15 @@ export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumV
       viewer.scene.backgroundColor = Color.fromCssColorString("#0f172a")
       viewer.scene.globe.show = showGlobe
 
-      // Configure initial camera controls
-      configureCameraControls(viewer, navMode)
-
-      // Enable zoom toward cursor (improves zoom UX)
-      viewer.scene.screenSpaceCameraController.enableCollisionDetection = false
+      configureCameraControls(viewer)
 
       // Apply performance settings
       applyScenePerformance(viewer, ecoMode, showGlobe)
+
+      canvasRef.current = viewer.canvas
+      if (viewer.canvas) {
+        viewer.canvas.style.cursor = navMode === "pan" ? "grab" : NAV_CURSORS[navMode]
+      }
     },
     [showGlobe, navMode, configureCameraControls, ecoMode, applyScenePerformance],
   )
@@ -351,7 +365,7 @@ export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumV
   }, [ecoMode, showGlobe, applyScenePerformance, applyTilesetPerformance])
 
   return (
-    <div ref={containerRef} className="relative w-full h-full">
+    <div ref={containerRef} className="relative w-full h-full" onContextMenu={(e) => e.preventDefault()}>
       {/* Loading overlay */}
       {isLoading && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900">
@@ -402,17 +416,11 @@ export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumV
             </Tooltip>
             <Tooltip>
               <TooltipTrigger>
-                <Button
-                  variant={ecoMode ? "glass-warning" : "glass"}
-                  size="icon-sm"
-                  onClick={toggleEcoMode}
-                >
+                <Button variant={ecoMode ? "glass-warning" : "glass"} size="icon-sm" onClick={toggleEcoMode}>
                   <ZapIcon className="size-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>
-                {ecoMode ? "Switch to quality mode" : "Switch to eco mode"}
-              </TooltipContent>
+              <TooltipContent>{ecoMode ? "Switch to quality mode" : "Switch to eco mode"}</TooltipContent>
             </Tooltip>
           </div>
 
@@ -470,7 +478,7 @@ export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumV
       {/* Keyboard hints */}
       <div className="absolute bottom-4 right-4 z-20">
         <div className="bg-slate-900/95 rounded-lg px-3 py-1.5 text-xs text-slate-500 border border-slate-700/50">
-          <span className="text-slate-400">Shift</span>=Pan · <span className="text-slate-400">Ctrl</span>=Zoom ·{" "}
+          <span className="text-slate-400">Left</span>=Pan · <span className="text-slate-400">Right</span>=Rotate ·{" "}
           <span className="text-slate-400">Scroll</span>=Zoom
         </div>
       </div>
@@ -497,6 +505,14 @@ export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumV
         requestRenderMode={ecoMode}
         maximumRenderTimeChange={ecoMode ? Infinity : undefined}
       >
+        <ScreenSpaceCameraController
+          {...controllerProps}
+          minimumZoomDistance={1}
+          maximumZoomDistance={100000}
+          inertiaZoom={0.5}
+          zoomFactor={5}
+          enableCollisionDetection={false}
+        />
         {/* Only render Globe when explicitly enabled */}
         {showGlobe && <Globe enableLighting={!ecoMode} />}
         {/* Disable sky elements in eco mode */}
