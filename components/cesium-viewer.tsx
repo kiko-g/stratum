@@ -1,6 +1,7 @@
 "use client"
 
 import { useRef, useState, useCallback, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import { Viewer, Cesium3DTileset, Globe, SkyBox, SkyAtmosphere } from "resium"
 import {
   Cesium3DTileset as Cesium3DTilesetClass,
@@ -49,7 +50,15 @@ function getDataPathFromUrl(url: string): string {
   return `public/${dir}`
 }
 
+function ecoModeFromSearchParams(searchParams: URLSearchParams): boolean {
+  const p = searchParams.get("eco")
+  if (p === "false") return false
+  if (p === "true") return true
+  return true
+}
+
 export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumViewerProps) {
+  const searchParams = useSearchParams()
   const sceneDisplayName = getSceneDisplayNameFromUrl(tilesetUrl)
   const dataPath = getDataPathFromUrl(tilesetUrl)
   const viewerRef = useRef<CesiumViewer | null>(null)
@@ -60,7 +69,11 @@ export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumV
   const [showGlobe, setShowGlobe] = useState(false)
   const [showWireframe, setShowWireframe] = useState(false)
   const [navMode, setNavMode] = useState<NavigationMode>("orbit")
-  const [performanceMode, setPerformanceMode] = useState(true) // Start with performance mode ON
+  const [ecoMode, setEcoMode] = useState(() => ecoModeFromSearchParams(searchParams))
+
+  useEffect(() => {
+    setEcoMode(ecoModeFromSearchParams(searchParams))
+  }, [searchParams])
 
   // Configure camera controls based on navigation mode
   const configureCameraControls = useCallback((viewer: CesiumViewer, mode: NavigationMode) => {
@@ -195,7 +208,7 @@ export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumV
       tilesetRef.current = tileset
 
       // Apply performance settings
-      applyTilesetPerformance(tileset, performanceMode)
+      applyTilesetPerformance(tileset, ecoMode)
 
       setIsLoading(false)
 
@@ -203,7 +216,7 @@ export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumV
         zoomToTileset()
       }, 100)
     },
-    [zoomToTileset, performanceMode, applyTilesetPerformance],
+    [zoomToTileset, ecoMode, applyTilesetPerformance],
   )
 
   const handleTilesetError = useCallback((error: unknown) => {
@@ -212,55 +225,61 @@ export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumV
     setError("Failed to load 3D tileset. Check if the data files exist.")
   }, [])
 
-  // Apply scene-level performance settings
-  const applyScenePerformance = useCallback((viewer: CesiumViewer, highPerf: boolean) => {
-    const scene = viewer.scene
+  // Apply scene-level performance settings (showGlobe = user preference for quality mode)
+  const applyScenePerformance = useCallback(
+    (viewer: CesiumViewer, highPerf: boolean, showGlobePref: boolean) => {
+      const scene = viewer.scene
 
-    if (highPerf) {
-      // Request render mode - only render when needed
-      scene.requestRenderMode = true
-      scene.maximumRenderTimeChange = Infinity
+      if (highPerf) {
+        // Request render mode - only render when needed
+        scene.requestRenderMode = true
+        scene.maximumRenderTimeChange = Infinity
 
-      // Target frame rate (prevents over-rendering)
-      viewer.targetFrameRate = 60
+        // Target frame rate (prevents over-rendering)
+        viewer.targetFrameRate = 60
 
-      // Disable expensive post-processing
-      scene.postProcessStages.fxaa.enabled = false
-      scene.fog.enabled = false
-      scene.highDynamicRange = false
+        // Disable expensive post-processing
+        scene.postProcessStages.fxaa.enabled = false
+        scene.fog.enabled = false
+        scene.highDynamicRange = false
 
-      // Disable globe entirely for pure model viewing
-      scene.globe.show = false
-      scene.globe.enableLighting = false
-      scene.globe.showGroundAtmosphere = false
-      scene.globe.depthTestAgainstTerrain = false
+        // Disable globe entirely for pure model viewing
+        scene.globe.show = false
+        scene.globe.enableLighting = false
+        scene.globe.showGroundAtmosphere = false
+        scene.globe.depthTestAgainstTerrain = false
 
-      // Disable sky rendering
-      if (scene.skyBox) scene.skyBox.show = false
-      if (scene.skyAtmosphere) scene.skyAtmosphere.show = false
-      if (scene.sun) scene.sun.show = false
-      if (scene.moon) scene.moon.show = false
+        // Disable sky rendering
+        if (scene.skyBox) scene.skyBox.show = false
+        if (scene.skyAtmosphere) scene.skyAtmosphere.show = false
+        if (scene.sun) scene.sun.show = false
+        if (scene.moon) scene.moon.show = false
 
-      // Optimize rendering pipeline
-      scene.logarithmicDepthBuffer = false
-      scene.useDepthPicking = false
-      scene.pickTranslucentDepth = false
+        // Optimize rendering pipeline
+        scene.logarithmicDepthBuffer = false
+        scene.useDepthPicking = false
+        scene.pickTranslucentDepth = false
 
-      // Reduce shadow complexity
-      scene.shadowMap.enabled = false
+        // Reduce shadow complexity
+        scene.shadowMap.enabled = false
 
-      scene.debugShowFramesPerSecond = false // Set to true to debug
-    } else {
-      scene.requestRenderMode = false
-      viewer.targetFrameRate = 60
-      scene.postProcessStages.fxaa.enabled = true
-      scene.fog.enabled = true
-      scene.highDynamicRange = true
-      scene.globe.enableLighting = true
-      scene.logarithmicDepthBuffer = true
-      scene.useDepthPicking = true
-    }
-  }, [])
+        scene.debugShowFramesPerSecond = false // Set to true to debug
+      } else {
+        scene.requestRenderMode = false
+        viewer.targetFrameRate = 60
+        scene.postProcessStages.fxaa.enabled = true
+        scene.fog.enabled = true
+        scene.highDynamicRange = true
+        scene.globe.enableLighting = true
+        scene.globe.show = showGlobePref
+        if (scene.skyBox) scene.skyBox.show = showGlobePref
+        if (scene.skyAtmosphere) scene.skyAtmosphere.show = showGlobePref
+        scene.logarithmicDepthBuffer = true
+        scene.useDepthPicking = true
+      }
+    },
+    [],
+  )
 
   const handleViewerReady = useCallback(
     (viewer: CesiumViewer) => {
@@ -277,9 +296,9 @@ export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumV
       viewer.scene.screenSpaceCameraController.enableCollisionDetection = false
 
       // Apply performance settings
-      applyScenePerformance(viewer, performanceMode)
+      applyScenePerformance(viewer, ecoMode, showGlobe)
     },
-    [showGlobe, navMode, configureCameraControls, performanceMode, applyScenePerformance],
+    [showGlobe, navMode, configureCameraControls, ecoMode, applyScenePerformance],
   )
 
   const resetCamera = useCallback(() => {
@@ -294,9 +313,13 @@ export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumV
     setShowWireframe((prev) => !prev)
   }, [])
 
-  const togglePerformanceMode = useCallback(() => {
-    setPerformanceMode((prev) => !prev)
-  }, [])
+  const toggleEcoMode = useCallback(() => {
+    const next = !ecoMode
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("eco", String(next))
+    const path = typeof window !== "undefined" ? window.location.pathname : ""
+    window.location.href = `${path}?${params.toString()}`
+  }, [ecoMode, searchParams])
 
   // Apply globe visibility changes via useEffect (safe ref access)
   useEffect(() => {
@@ -315,17 +338,17 @@ export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumV
     tileset.debugWireframe = showWireframe
   }, [showWireframe])
 
-  // Apply performance mode changes via useEffect (safe ref access)
+  // Apply eco mode changes via useEffect (safe ref access)
   useEffect(() => {
     const viewer = viewerRef.current
     const tileset = tilesetRef.current
     if (viewer && !viewer.isDestroyed()) {
-      applyScenePerformance(viewer, performanceMode)
+      applyScenePerformance(viewer, ecoMode, showGlobe)
     }
     if (tileset) {
-      applyTilesetPerformance(tileset, performanceMode)
+      applyTilesetPerformance(tileset, ecoMode)
     }
-  }, [performanceMode, applyScenePerformance, applyTilesetPerformance])
+  }, [ecoMode, showGlobe, applyScenePerformance, applyTilesetPerformance])
 
   return (
     <div ref={containerRef} className="relative w-full h-full">
@@ -380,15 +403,15 @@ export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumV
             <Tooltip>
               <TooltipTrigger>
                 <Button
-                  variant={performanceMode ? "glass-warning" : "glass"}
+                  variant={ecoMode ? "glass-warning" : "glass"}
                   size="icon-sm"
-                  onClick={togglePerformanceMode}
+                  onClick={toggleEcoMode}
                 >
                   <ZapIcon className="size-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {performanceMode ? "Switch to quality mode" : "Switch to performance mode"}
+                {ecoMode ? "Switch to quality mode" : "Switch to eco mode"}
               </TooltipContent>
             </Tooltip>
           </div>
@@ -471,14 +494,14 @@ export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumV
         infoBox={false}
         selectionIndicator={false}
         shadows={false}
-        requestRenderMode={performanceMode}
-        maximumRenderTimeChange={performanceMode ? Infinity : undefined}
+        requestRenderMode={ecoMode}
+        maximumRenderTimeChange={ecoMode ? Infinity : undefined}
       >
         {/* Only render Globe when explicitly enabled */}
-        {showGlobe && <Globe enableLighting={!performanceMode} />}
-        {/* Disable sky elements in performance mode */}
-        <SkyBox show={showGlobe && !performanceMode} />
-        <SkyAtmosphere show={showGlobe && !performanceMode} />
+        {showGlobe && <Globe enableLighting={!ecoMode} />}
+        {/* Disable sky elements in eco mode */}
+        <SkyBox show={showGlobe && !ecoMode} />
+        <SkyAtmosphere show={showGlobe && !ecoMode} />
         <Cesium3DTileset url={tilesetUrl} onReady={handleTilesetReady} onError={handleTilesetError} />
       </Viewer>
     </div>

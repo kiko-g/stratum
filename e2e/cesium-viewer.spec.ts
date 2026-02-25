@@ -115,20 +115,20 @@ test.describe("Cesium Viewer", () => {
     expect(criticalErrors).toHaveLength(0)
   })
 
-  test("performance mode toggle works without errors", async ({ page }) => {
+  test("eco mode toggle works without errors", async ({ page }) => {
     const errors = await collectConsoleErrors(page)
 
     await page.waitForTimeout(3000)
 
-    // Performance button is the 4th button (has Zap icon)
+    // Eco button is the 4th button (has Zap icon)
     const buttons = page.locator("button")
-    const perfButton = buttons.nth(3)
-    await expect(perfButton).toBeVisible()
+    const ecoButton = buttons.nth(3)
+    await expect(ecoButton).toBeVisible()
 
-    // Toggle performance mode
-    await perfButton.click()
+    // Toggle eco mode (reloads with ?eco=false then ?eco=true)
+    await ecoButton.click()
     await page.waitForTimeout(500)
-    await perfButton.click()
+    await ecoButton.click()
     await page.waitForTimeout(500)
 
     const criticalErrors = errors.filter(

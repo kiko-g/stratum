@@ -8,8 +8,13 @@ import { CameraEventType } from "../../__mocks__/cesium"
 vi.mock("cesium", () => import("../../__mocks__/cesium"))
 vi.mock("resium", () => import("../../__mocks__/resium"))
 
+const mockSearchParams = new URLSearchParams()
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => mockSearchParams,
+}))
+
 // Helper to get buttons by index (based on DOM order)
-// Button order: 0-Globe, 1-Wireframe, 2-Reset, 3-Performance, 4-Orbit, 5-Pan, 6-Zoom
+// Button order: 0-Globe, 1-Wireframe, 2-Reset, 3-Eco, 4-Orbit, 5-Pan, 6-Zoom
 const getButtons = () => screen.getAllByRole("button")
 
 describe("CesiumViewerComponent", () => {
@@ -63,7 +68,7 @@ describe("CesiumViewerComponent", () => {
 
       const globeButton = getButtons()[0]
 
-      // Initial state - globe is hidden (showGlobe = false, performance mode on by default)
+      // Initial state - globe is hidden (showGlobe = false, eco mode on by default)
       expect(mockViewerInstance.scene.globe.show).toBe(false)
 
       // Click to show globe
@@ -136,26 +141,38 @@ describe("CesiumViewerComponent", () => {
     })
   })
 
-  describe("Performance Mode Toggle", () => {
-    it("toggles performance mode when button is clicked", async () => {
+  describe("Eco Mode Toggle", () => {
+    it("navigates with eco=false when eco button is clicked from eco mode", async () => {
+      const locationSpy = { href: "", pathname: "/view/alpha" }
+      vi.stubGlobal("location", locationSpy)
+
       render(<CesiumViewerComponent />)
 
       await act(async () => {
         vi.advanceTimersByTime(100)
       })
 
-      const perfButton = getButtons()[3]
-
-      // Performance mode is ON by default
+      const ecoButton = getButtons()[3]
       expect(mockViewerInstance.scene.requestRenderMode).toBe(true)
 
-      // Click to switch to quality mode
       await act(async () => {
-        fireEvent.click(perfButton)
-        vi.runAllTimers()
+        fireEvent.click(ecoButton)
       })
 
-      expect(mockViewerInstance.scene.requestRenderMode).toBe(false)
+      expect(locationSpy.href).toBe("/view/alpha?eco=false")
+    })
+
+    it("shows requestRenderMode true when eco param is true", async () => {
+      mockSearchParams.get = (key: string) => (key === "eco" ? "true" : null)
+      mockSearchParams.toString = () => "eco=true"
+
+      render(<CesiumViewerComponent />)
+
+      await act(async () => {
+        vi.advanceTimersByTime(100)
+      })
+
+      expect(mockViewerInstance.scene.requestRenderMode).toBe(true)
     })
   })
 
@@ -378,16 +395,16 @@ describe("CesiumViewerComponent", () => {
       expect(panButton.className).toContain("text-emerald-400")
     })
 
-    it("shows warning variant when performance mode is on", async () => {
+    it("shows warning variant when eco mode is on", async () => {
       render(<CesiumViewerComponent />)
 
       await act(async () => {
         vi.advanceTimersByTime(100)
       })
 
-      const perfButton = getButtons()[3]
+      const ecoButton = getButtons()[3]
       // Warning variant uses amber color
-      expect(perfButton.className).toContain("text-amber-400")
+      expect(ecoButton.className).toContain("text-amber-400")
     })
   })
 })
