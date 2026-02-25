@@ -35,7 +35,9 @@ interface CesiumViewerProps {
   tilesetUrl?: string
 }
 
-export function CesiumViewerComponent({ tilesetUrl = "/data/alpha/tileset.json" }: CesiumViewerProps) {
+const DEMO_TILESET_URL = "/data/alpha/tileset.json"
+
+export function CesiumViewerComponent({ tilesetUrl = DEMO_TILESET_URL }: CesiumViewerProps) {
   const viewerRef = useRef<CesiumViewer | null>(null)
   const tilesetRef = useRef<Cesium3DTilesetClass | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -187,7 +189,7 @@ export function CesiumViewerComponent({ tilesetUrl = "/data/alpha/tileset.json" 
         zoomToTileset()
       }, 100)
     },
-    [zoomToTileset, performanceMode, applyTilesetPerformance]
+    [zoomToTileset, performanceMode, applyTilesetPerformance],
   )
 
   const handleTilesetError = useCallback((error: unknown) => {
@@ -263,7 +265,7 @@ export function CesiumViewerComponent({ tilesetUrl = "/data/alpha/tileset.json" 
       // Apply performance settings
       applyScenePerformance(viewer, performanceMode)
     },
-    [showGlobe, navMode, configureCameraControls, performanceMode, applyScenePerformance]
+    [showGlobe, navMode, configureCameraControls, performanceMode, applyScenePerformance],
   )
 
   const resetCamera = useCallback(() => {
